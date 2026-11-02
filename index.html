@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>QBerries · Horas extras</title>
+    <link rel="icon" type="image/png" href="assets/logo-qberries.png" />
+    <link rel="apple-touch-icon" href="assets/logo-qberries.png" />
+    <meta name="theme-color" content="#e30613" />
+    <meta name="qberries-api" content="https://script.google.com/macros/s/AKfycbyQBy1Hc0wV4UwOt7wFou-8c5BroxpOCdqi0TmM-9hzdhDg0LzZFx-lqHbj4wqYHeDGig/exec" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" /></noscript>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="stylesheet" href="css/shell.css" />
+    <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/dashboard.css" />
+    <link rel="stylesheet" href="css/responsive.css" />
+  </head>
+  <body>
+    <div id="backdrop" class="backdrop"></div>
+    <aside id="sidebar" class="sidebar">
+      <a class="brand" href="#/dashboard">
+        <img src="assets/logo-qberries.png" alt="QBerries" width="168" height="156" decoding="async" />
+      </a>
+      <nav class="nav">
+        <p class="nav-label">Operación</p>
+        <a href="#/dashboard" class="on">
+          <svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></svg>
+          Dashboard
+        </a>
+        <a href="#/detalle">
+          <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 15v-4M12 15V8M16 15v-7"/></svg>
+          Detalle HE
+        </a>
+        <p class="nav-label">Datos</p>
+        <a href="#/planilla">
+          <svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v6h6"/></svg>
+          Cargar planilla
+        </a>
+        <a href="#/movimientos">
+          <svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="8"/></svg>
+          Movimientos del sistema
+        </a>
+      </nav>
+      <div class="side-card">
+        <strong>Planilla general</strong>
+        <small>Si internet falla, cargue el Excel aquí. Se guarda en este equipo. Las hojas nuevas se juntan sin duplicar filas.</small>
+      </div>
+    </aside>
+
+    <div class="shell">
+      <header class="topbar">
+        <button id="menu" class="icon-btn menu-btn" type="button" aria-label="Menú">☰</button>
+        <label class="search-bar">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" type="search" placeholder="Buscar DNI o nombres…" />
+        </label>
+        <div class="top-actions">
+          <button id="refresh-btn" class="icon-btn" type="button" aria-label="Actualizar">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+          </button>
+          <div class="hello-wrap">
+            <button type="button" class="hello" id="hello-btn" aria-haspopup="true" aria-expanded="false">
+              <span class="hello-pic"><img src="assets/logo-qberries.png" alt="" width="36" height="36" /></span>
+              <span class="hello-meta">
+                <strong id="hello-name">Administrador</strong>
+                <small>Horas extras</small>
+              </span>
+            </button>
+            <div id="hello-menu" class="hello-menu" hidden>
+              <p class="hello-menu-name" id="hello-menu-name">Administrador</p>
+              <button type="button" id="logout-btn">Cerrar sesión</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="page on" data-page="dashboard">
+          <header class="dash-head">
+            <div class="filters">
+              <label class="field"><span>Año</span><select id="f-anio" aria-label="Año"></select></label>
+              <label class="field"><span>Mes</span><select id="f-mes" aria-label="Mes"></select></label>
+              <label class="field"><span>Semana</span><select id="f-semana" aria-label="Semana"></select></label>
+              <label class="field"><span>Área</span><select id="f-area" aria-label="Área"></select></label>
+            </div>
+            <div class="kpis" aria-live="polite">
+              <article class="kpi kpi-hrs">
+                <div class="label">Total de HE</div>
+                <div class="value" id="kpi-hrs">0</div>
+              </article>
+              <article class="kpi kpi-imp">
+                <div class="label">Costo Total HE (S/)</div>
+                <div class="value" id="kpi-imp">S/ 0.00</div>
+              </article>
+              <article class="kpi kpi-colab">
+                <div class="label">Colaboradores con HE</div>
+                <div class="value" id="kpi-colab">0</div>
+              </article>
+            </div>
+          </header>
+
+          <div class="toolbar">
+            <p id="src-status" class="src-status">Cargando…</p>
+            <div class="tools">
+              <span id="perf-stamp" class="perf-stamp"></span>
+              <button type="button" class="ghost-btn" id="btn-reload">Actualizar</button>
+            </div>
+          </div>
+          <p id="demo-banner" class="demo-banner" hidden>
+            Estos datos son de ejemplo. Para ver su planilla real, vaya a <strong>Cargar planilla</strong>.
+          </p>
+
+          <section class="grid-main">
+            <div class="col-left">
+              <article class="card">
+                <div class="card-head">
+                  <h2>Horas Extras por Área</h2>
+                  <button type="button" class="chart-dl" data-chart-dl="chart-hrs-area" data-title="Horas extras por área" aria-label="Descargar gráfico">Descargar</button>
+                </div>
+                <div id="chart-hrs-area" class="chart"></div>
+              </article>
+              <article class="card">
+                <div class="card-head">
+                  <h2>Horas Extras por Semana</h2>
+                  <button type="button" class="chart-dl" data-chart-dl="chart-week" data-title="Horas extras por semana" aria-label="Descargar gráfico">Descargar</button>
+                </div>
+                <div id="chart-week" class="chart"></div>
+              </article>
+            </div>
+            <div class="col-right">
+              <article class="card">
+                <div class="card-head">
+                  <h2>Costo de Hora Extras por Área (S/.)</h2>
+                  <button type="button" class="chart-dl" data-chart-dl="chart-cost-area" data-title="Costo de horas extras por área" aria-label="Descargar gráfico">Descargar</button>
+                </div>
+                <div id="chart-cost-area" class="chart"></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="table-panel">
+            <div class="table-head">
+              <h2>Detalle de Horas Extras</h2>
+              <div class="table-tools">
+                <input id="q-table" type="search" placeholder="Buscar DNI o nombres…" />
+                <a class="ghost-btn" href="#/detalle">Ver completo</a>
+                <span id="dash-table-count"></span>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="he">
+                <thead><tr id="dash-table-head"></tr></thead>
+                <tbody id="dash-table-body"></tbody>
+              </table>
+            </div>
+            <div class="table-footbar"><div id="dash-table-pager"></div></div>
+          </section>
+        </section>
+
+        <section class="page" data-page="detalle">
+          <div class="page-title">
+            <h1>Detalle de Horas Extras</h1>
+            <p id="detalle-chip">Tabla completa para exportar a Excel o PDF. Usa los filtros del dashboard.</p>
+          </div>
+          <section class="table-panel table-panel-lg">
+            <div class="table-head">
+              <h2>Registros</h2>
+              <div class="table-tools">
+                <input id="q-detalle" type="search" placeholder="Buscar DNI o nombres…" />
+                <button type="button" class="ghost-btn" id="btn-csv">CSV</button>
+                <button type="button" class="ghost-btn" id="btn-xls">Excel</button>
+                <button type="button" class="tool-btn" id="btn-pdf">PDF</button>
+                <span id="table-count"></span>
+              </div>
+            </div>
+            <div class="table-scroll table-scroll-lg">
+              <table class="he">
+                <thead><tr id="table-head"></tr></thead>
+                <tbody id="table-body"></tbody>
+              </table>
+            </div>
+            <div class="table-footbar"><div id="table-pager"></div></div>
+          </section>
+        </section>
+
+        <section class="page" data-page="planilla">
+          <div class="planilla-wrap">
+            <div class="page-title">
+              <h1>Cargar planilla</h1>
+              <p>Use esta pantalla si internet está lento o no hay conexión. El Excel se lee y se guarda solo en este equipo.</p>
+            </div>
+            <article class="card planilla-card">
+              <div class="dropzone" id="excel-drop" tabindex="0" role="button">
+                <svg class="drop-ico" viewBox="0 0 48 48" aria-hidden="true">
+                  <rect x="10" y="6" width="28" height="36" rx="6" fill="#fff"/>
+                  <path d="M16 6h10l12 12v24a6 6 0 0 1-6 6H16a6 6 0 0 1-6-6V12a6 6 0 0 1 6-6z" fill="#eef7e0"/>
+                  <path d="M26 6v10a2 2 0 0 0 2 2h10" fill="#d7ecb8"/>
+                  <path d="M24 22v12M18 28l6-6 6 6" fill="none" stroke="#6b9b2d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <strong>Arrastre el Excel o pulse para elegir</strong>
+                <small>Archivo .xlsx o .xls · Reporte Planilla General Detallado</small>
+              </div>
+              <p id="planilla-status" class="src-status">Todavía no hay una planilla local.</p>
+              <p class="planilla-hint">No pasa por la planilla en la nube. Sirve como carga de emergencia y queda en este navegador.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="page" data-page="movimientos">
+          <div class="page-title">
+            <h1>Movimientos del sistema</h1>
+            <p>Quién filtró, cargó o exportó, con fecha y hora.</p>
+          </div>
+          <section class="table-panel">
+            <div class="table-head">
+              <h2>Historial</h2>
+              <span id="audit-count"></span>
+            </div>
+            <div class="table-scroll">
+              <table class="he">
+                <thead>
+                  <tr>
+                    <th>Fecha y hora</th>
+                    <th>Usuario</th>
+                    <th>Acción</th>
+                    <th>Detalle</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-body"></tbody>
+              </table>
+            </div>
+            <div class="table-footbar"><div id="audit-pager"></div></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <input id="excel-file" type="file" accept=".xlsx,.xls" />
+    <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
+    <div id="loading" class="loading" hidden>
+      <div class="loading-card"><span class="spin"></span><span id="loading-text">Cargando…</span></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/performance.js"></script>
+    <script src="js/audit.js"></script>
+    <script src="js/parser.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/filters.js"></script>
+    <script src="js/kpis.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/table.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/shell.js"></script>
+  </body>
+</html>
