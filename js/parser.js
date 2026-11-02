@@ -205,10 +205,29 @@
     jornal: ["jornal"],
   };
   var DATE_KEYS = ["f trabajo", "fecha trabajo", "fecha", "f-trabajo", "f trabajo"];
-  var WEEK_KEYS = ["semana"];
+  var WEEK_KEYS = ["semana", "sem", "nro semana", "numero semana", "semana iso"];
   var MONTH_KEYS = ["mes"];
   var YEAR_KEYS = ["ano", "anio", "year"];
 
+  function weekNum(v) {
+    var n = asNumber(v);
+    if (n >= 1 && n <= 53) return Math.round(n);
+    var m = String(v == null ? "" : v).match(/(^|[^\d])(\d{1,2})([^\d]|$)/);
+    if (m) {
+      n = Number(m[2]);
+      if (n >= 1 && n <= 53) return n;
+    }
+    return 0;
+  }
+  function findSemanaCol(row0, row1, row2, width) {
+    var c;
+    for (c = 0; c < width; c += 1) {
+      var f = fold(row0[c]) + " " + fold(row1[c]) + " " + fold(row2[c]);
+      if (f.indexOf("semana") >= 0 || (" " + f + " ").indexOf(" sem ") >= 0) return c;
+    }
+    if (width >= 26) return 25;
+    return null;
+  }
   function matchList(key, list) {
     for (var i = 0; i < list.length; i += 1) if (key === list[i] || key.indexOf(list[i]) === 0) return true;
     return false;
@@ -274,15 +293,18 @@
         var b = fold(filled1[c]);
         var d = fold(row2[c]);
         var ident = "";
+        var aRaw = fold(row0[c]);
+        var bRaw = fold(row1[c]);
+        var dRaw = fold(row2[c]);
         Object.keys(IDENTITY).forEach(function (k) {
-          if (matchList(a, IDENTITY[k]) || matchList(b, IDENTITY[k])) ident = k;
+          if (matchList(aRaw, IDENTITY[k]) || matchList(bRaw, IDENTITY[k]) || matchList(dRaw, IDENTITY[k]) || matchList(a, IDENTITY[k]) || matchList(b, IDENTITY[k])) ident = k;
         });
         if (ident) {
           map[ident] = c;
           continue;
         }
-        if (matchList(a, DATE_KEYS) || matchList(b, DATE_KEYS)) { map.fecha = c; continue; }
-        if (matchList(a, WEEK_KEYS) || matchList(b, WEEK_KEYS)) { map.semana = c; continue; }
+        if (matchList(aRaw, DATE_KEYS) || matchList(bRaw, DATE_KEYS) || matchList(a, DATE_KEYS) || matchList(b, DATE_KEYS)) { map.fecha = c; continue; }
+        if (matchList(aRaw, WEEK_KEYS) || matchList(bRaw, WEEK_KEYS) || matchList(dRaw, WEEK_KEYS) || matchList(a, WEEK_KEYS) || matchList(b, WEEK_KEYS)) { map.semana = c; continue; }
         if (matchList(a, MONTH_KEYS) || matchList(b, MONTH_KEYS)) { map.mes = c; continue; }
         if (matchList(a, YEAR_KEYS) || matchList(b, YEAR_KEYS)) { map.anio = c; continue; }
         var group = headerRows === 3 ? (b || a) : (a.indexOf("ingreso") >= 0 ? b : a);
@@ -298,6 +320,10 @@
         kinds[kind] = true;
         if (qi === "imp") map["imp" + cap(kind)] = c;
         else map["hrs" + cap(kind)] = c;
+      }
+      if (map.semana == null) {
+        var z = findSemanaCol(row0, row1, row2, width);
+        if (z != null) map.semana = z;
       }
       var score = Object.keys(map).length + (map.dni != null ? 5 : 0) + (map.nombres != null ? 3 : 0) + (kinds.he || kinds.he25 || kinds.he100 ? 8 : 0);
       if (score > best.score) best = { score: score, headerRows: headerRows, start: r, map: map, kinds: kinds };
@@ -420,7 +446,7 @@
       rec.fechaIngreso = parseDay(cell(row, map.fechaIngreso)) || asText(cell(row, map.fechaIngreso));
       rec.fechaCese = parseDay(cell(row, map.fechaCese)) || asText(cell(row, map.fechaCese));
       rec.fecha = parseDay(cell(row, map.fecha));
-      rec.semana = asNumber(cell(row, map.semana)) || 0;
+      rec.semana = weekNum(cell(row, map.semana));
       rec.anio = asNumber(cell(row, map.anio)) || 0;
       if (map.mes != null) {
         var mesVal = cell(row, map.mes);

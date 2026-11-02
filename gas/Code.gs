@@ -513,6 +513,25 @@ function cap_(kind) {
   if (kind === "he100") return "100";
   return kind;
 }
+function findSemanaCol_(row0, row1, row2, width) {
+  var c;
+  for (c = 0; c < width; c += 1) {
+    var f = fold_(row0[c]) + " " + fold_(row1[c]) + " " + fold_(row2[c]);
+    if (f.indexOf("semana") >= 0 || f === "sem" || (" " + f + " ").indexOf(" sem ") >= 0) return c;
+  }
+  if (width >= 26) return 25;
+  return null;
+}
+function weekNum_(v) {
+  var n = asNumber_(v);
+  if (n >= 1 && n <= 53) return Math.round(n);
+  var m = String(v == null ? "" : v).match(/(^|[^\d])(\d{1,2})([^\d]|$)/);
+  if (m) {
+    n = Number(m[2]);
+    if (n >= 1 && n <= 53) return n;
+  }
+  return 0;
+}
 function identityKey_(a) {
   if (a === "apellidos y nombres" || a === "trabajador" || a === "nombres y apellidos" || a === "nombre" || a === "apellidos" || a === "nombres") return "nombres";
   if (a === "dni" || a === "documento" || a === "nro documento" || a === "numero documento" || a === "codigo trabajador" || a === "cod trabajador") return "dni";
@@ -523,7 +542,7 @@ function identityKey_(a) {
   if (a === "etapa") return "etapa";
   if (a === "jornal") return "jornal";
   if (a === "f trabajo" || a === "fecha trabajo" || a === "fecha" || a === "f trabajo" || a === "f-trabajo") return "fecha";
-  if (a === "semana") return "semana";
+  if (a === "semana" || a === "sem" || a === "nro semana" || a === "numero semana" || a === "semana iso") return "semana";
   if (a === "mes") return "mes";
   if (a === "ano" || a === "anio" || a === "year") return "anio";
   return "";
@@ -545,8 +564,8 @@ function buildColumnMap_(rows) {
     function padRow(row) {
       var copy = row.slice();
       while (copy.length < widthPad) copy.push("");
-  return copy;
-}
+      return copy;
+    }
     row0 = padRow(row0);
     row1 = padRow(row1);
     row2 = padRow(row2);
@@ -567,7 +586,7 @@ function buildColumnMap_(rows) {
       var a = fold_(filled0[c]);
       var b = fold_(filled1[c]);
       var d = fold_(row2[c]);
-      var ident = identityKey_(a) || identityKey_(b);
+      var ident = identityKey_(fold_(row0[c])) || identityKey_(fold_(row1[c])) || identityKey_(fold_(row2[c])) || identityKey_(a) || identityKey_(b);
       if (ident) { map[ident] = c; continue; }
       var group = headerRows === 3 ? (b || a) : (a.indexOf("ingreso") >= 0 ? b : a);
       var leaf = headerRows === 3 ? d : (headerRows === 2 ? b : "");
@@ -578,6 +597,10 @@ function buildColumnMap_(rows) {
       kinds[kind] = true;
       if (qi === "imp") map["imp" + cap_(kind)] = c;
       else map["hrs" + cap_(kind)] = c;
+    }
+    if (map.semana == null) {
+      var z = findSemanaCol_(row0, row1, row2, width);
+      if (z != null) map.semana = z;
     }
     var score = Object.keys(map).length + (map.dni != null ? 5 : 0) + (map.nombres != null ? 3 : 0);
     if (kinds.he || kinds.he25 || kinds.he100) score += 8;
@@ -631,7 +654,7 @@ function parseAoA_(rows, sheetName, extraFecha) {
       anio: asNumber_(cell_(row, map.anio)) || 0,
       mes: 0,
       mesNombre: "",
-      semana: asNumber_(cell_(row, map.semana)) || 0,
+      semana: weekNum_(cell_(row, map.semana)),
       hrs25: hours_(asNumber_(cell_(row, map.hrs25))),
       imp25: money_(asNumber_(cell_(row, map.imp25))),
       hrs35: hours_(asNumber_(cell_(row, map.hrs35))),

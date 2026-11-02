@@ -208,6 +208,14 @@ assert(det.records[0].hrs25 === 0, "no inventa horas 25%");
 
 var per = ctx.parseSheetPeriod_("02-11-2026");
 assert(per.fecha === "2026-11-02" && per.anio === 2026 && per.mes === 11, "nombre de hoja = fecha");
+var withZ = planilla.map(function (r) { return r.slice(); });
+withZ[0][25] = "Semana";
+withZ[3][25] = 45;
+withZ[6][25] = 46;
+var zParsed = ctx.parseAoA_(withZ, "Hoja 3");
+assert(zParsed.records[0].semana === 45, "columna Z = semana 45");
+assert(zParsed.records[1].semana === 46, "columna Z = semana 46");
+
 var dated = ctx.parseAoA_(planilla, "02-11-2026");
 assert(dated.records[0].fecha === "2026-11-02", "filas sin F-TRABAJO heredan fecha de la hoja");
 var hojaSinNombre = ctx.parseAoA_(planilla, "Hoja 3", "2026-11-01");
