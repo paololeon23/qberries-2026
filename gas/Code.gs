@@ -10,11 +10,10 @@
  * Flujo: POST JSON { action, payload } → lock → login | he
  * Lectura: GET /exec?action=he → { ok, records, sheets, generatedAt }
  *
- * Lee TODAS las hojas: Hoja 2, Hoja 3, 01-11-2026, copias… cada una nueva entra.
- * No inventa horas ni importes.
- * Plantilla: PlanillaGeneralDetallado (solo encabezados).
- * Cada día se crea una hoja con la fecha de Lima: 02-11-2026, 03-11-2026…
- * El GET junta todas. Filas repetidas (misma huella) se omiten.
+ * NO crea hojas, NO las renombra, NO las borra, NO pinta celdas.
+ * Usted pulsa + en Google Sheets. El script SOLO LEE lo que ya está.
+ * Junta todas las pestañas, todos los días. Filas repetidas se omiten.
+ * No inventa horas ni importes. Filas repetidas se omiten.
  * Encabezados reales del Excel "Reporte Planilla General Detallado":
  *   Apellidos y Nombres, DNI, Fecha Ingreso, Fecha Cese, Cargo, ÁREA, ETAPA, JORNAL
  *   HORAS EXTRAS (Cantidad, Importe), Horas 100% (Cantidad, Importe)
@@ -27,16 +26,25 @@ var CACHE_KEY = "QBE_HE_PACK";
 var CACHE_TTL = 90;
 var USUARIO_ACCESO = "Administrador";
 var CLAVE_ACCESO = "eduardo2026";
-var HEADER_BG = "#e8eaed";
-var HEADER_FG = "#3c4043";
 
 var MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"];
 
 function doGet(e) {
-  var action = String((e && e.parameter && e.parameter.action) || "").toLowerCase();
-  if (action === "ping" || !action) return json_({ ok: true, app: APP, tz: TZ });
-  if (action === "meta") return json_(meta_());
-  return json_(loadPack_());
+  try {
+    var action = String((e && e.parameter && e.parameter.action) || "").toLowerCase();
+    if (action === "ping" || !action) return json_({ ok: true, app: APP, tz: TZ });
+    if (action === "meta") return json_(meta_());
+    return json_(loadPack_());
+  } catch (err) {
+    return json_({
+      ok: false,
+      error: "lectura_fallida",
+      message: String(err && err.message ? err.message : err),
+      records: [],
+      sheets: [],
+      total: 0,
+    });
+  }
 }
 
 function doPost(e) {
@@ -82,7 +90,7 @@ function login_(payload) {
   if (usuario !== USUARIO_ACCESO.toLowerCase() || clave !== CLAVE_ACCESO) {
     return { ok: false, error: "clave_invalida", message: "Usuario o clave incorrectos." };
   }
-  return {
+    return {
     ok: true,
     data: { id: "USR-ADMIN", usuario: USUARIO_ACCESO, nombre: USUARIO_ACCESO, rol: "admin" },
   };
@@ -90,10 +98,46 @@ function login_(payload) {
 
 function instalar() {
   var ss = getSpreadsheet();
-  ensureSheets_(ss);
-  CacheService.getScriptCache().remove(CACHE_KEY);
+  ensureTrigger_(ss);
+  try { CacheService.getScriptCache().remove(CACHE_KEY); } catch (err) {}
   PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", ss.getId());
   return ss.getUrl();
+}
+
+function onChange(e) {
+  onSheetChange_(e);
+}
+
+function onSheetChange_(e) {
+  try {
+    CacheService.getScriptCache().remove(CACHE_KEY);
+  } catch (err) {}
+  if (!e || e.changeType !== "INSERT_GRID") return;
+  try {
+    var ss = e.source || SpreadsheetApp.getActive();
+    var sh = ss && ss.getActiveSheet ? ss.getActiveSheet() : null;
+    if (sh) sheetFecha_(sh, sh.getName(), true);
+  } catch (err2) {}
+}
+
+function ensureTrigger_(ss) {
+  if (typeof ScriptApp === "undefined" || !ScriptApp.getProjectTriggers || !ss) return;
+  var fn = "onSheetChange_";
+  var list = [];
+  try {
+    list = ScriptApp.getProjectTriggers() || [];
+  } catch (err) {
+    return;
+  }
+  var i;
+  for (i = 0; i < list.length; i += 1) {
+    try {
+      if (list[i].getHandlerFunction() === fn) return;
+    } catch (err2) {}
+  }
+  try {
+    ScriptApp.newTrigger(fn).forSpreadsheet(ss).onChange().create();
+  } catch (err3) {}
 }
 
 function json_(obj) {
@@ -107,191 +151,183 @@ function parseBody_(e) {
 
 function getSpreadsheet() {
   var props = PropertiesService.getScriptProperties();
-  var id = props.getProperty("SPREADSHEET_ID");
+  var id = "";
+  try { id = props.getProperty("SPREADSHEET_ID") || ""; } catch (err) { id = ""; }
   var ss = null;
   if (id) {
-    try {
-      ss = SpreadsheetApp.openById(id);
-    } catch (err) {
-      ss = null;
-    }
+    try { ss = SpreadsheetApp.openById(id); } catch (err2) { ss = null; }
   }
   if (!ss) {
-    try {
-      ss = SpreadsheetApp.getActive();
-    } catch (err) {
-      ss = null;
-    }
+    try { ss = SpreadsheetApp.getActive(); } catch (err3) { ss = null; }
   }
   if (!ss) {
-    ss = SpreadsheetApp.create("QBerries Horas Extras");
+    throw new Error("No hay planilla vinculada. Abra el spreadsheet y ejecute instalar().");
   }
-  props.setProperty("SPREADSHEET_ID", ss.getId());
-  ensureSheets_(ss);
+  try { props.setProperty("SPREADSHEET_ID", ss.getId()); } catch (err4) {}
   return ss;
 }
 
 function hoyYmd_() {
   return Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
 }
-function hoyHoja_() {
-  return Utilities.formatDate(new Date(), TZ, "dd-MM-yyyy");
-}
 
-function ensureSheets_(ss) {
-  var def = ss.getSheetByName("Hoja 1") || ss.getSheetByName("Hoja1") || ss.getSheetByName("Sheet1");
-  if (def && def.getLastRow() === 0 && !ss.getSheetByName("PlanillaGeneralDetallado")) {
-    def.setName("PlanillaGeneralDetallado");
+function sheetFecha_(sh, name, stamp) {
+  var fromName = parseSheetPeriod_(name || "").fecha;
+  if (fromName) return fromName;
+  var key = "";
+  try { key = "HOJA_FECHA_" + sh.getSheetId(); } catch (err) { key = ""; }
+  if (key) {
+    try {
+      var hit = PropertiesService.getScriptProperties().getProperty(key);
+      if (hit) return hit;
+    } catch (err2) {}
   }
-  ensurePlanilla_(ss);
-  ensureHojaDia_(ss);
-  prepareHojasNuevas_(ss);
-  dropEmptyDefaults_(ss);
+  if (!stamp) return "";
+  var ymd = hoyYmd_();
+  if (key) {
+    try { PropertiesService.getScriptProperties().setProperty(key, ymd); } catch (err3) {}
+  }
+  return ymd;
 }
 
-function dropEmptyDefaults_(ss) {
-  var keep = hoyHoja_();
-  ["Hoja 1", "Hoja1", "Sheet1", "Sheet 1", "DETALLE_HE"].forEach(function (name) {
-    if (name === keep) return;
-    var extra = ss.getSheetByName(name);
-    if (!extra) return;
-    var empty = name === "DETALLE_HE" ? extra.getLastRow() <= 1 : extra.getLastRow() === 0;
-    if (empty && ss.getSheets().length > 1) ss.deleteSheet(extra);
-  });
+function skipSheetName_(name) {
+  var n = String(name || "");
+  if (/^config/i.test(n) || /^instrucc/i.test(n)) return true;
+  return false;
 }
 
-function paintHeader_(sh, cols, rows, tabColor) {
-  if (!sh) return;
-  rows = Number(rows) || 1;
-  cols = Math.max(Number(cols) || 1, sh.getLastColumn() || 1, 1);
-  sh.setFrozenRows(rows);
-  sh.getRange(1, 1, rows, cols)
-    .setFontWeight("bold")
-    .setBackground(HEADER_BG)
-    .setFontColor(HEADER_FG)
-    .setHorizontalAlignment("center")
-    .setVerticalAlignment("middle")
-    .setWrap(true);
-  sh.getRange(1, 1, sh.getMaxRows(), cols)
-    .setHorizontalAlignment("center")
-    .setVerticalAlignment("middle");
-  if (tabColor) sh.setTabColor(tabColor);
-}
-
-function mergePair_(sh, row, startCol) {
+function sanitizeCell_(v) {
+  if (v == null || v === "") return "";
+  var t = typeof v;
+  if (t === "number") return isFinite(v) ? v : 0;
+  if (t === "boolean") return v ? 1 : 0;
+  if (t === "string") return v;
+  if (Object.prototype.toString.call(v) === "[object Date]") return isNaN(v.getTime()) ? "" : v;
   try {
-    sh.getRange(row, startCol, 1, 2).merge();
+    if (typeof v.getMessage === "function" || v.name === "Error") return "";
   } catch (err) {}
+  try { return String(v); } catch (err2) { return ""; }
 }
 
-function plantillaRows_() {
+function sanitizeGrid_(grid) {
+  var out = [];
+  var i, j, row, copy;
+  for (i = 0; i < grid.length; i += 1) {
+    row = grid[i] || [];
+    copy = [];
+    for (j = 0; j < row.length; j += 1) copy.push(sanitizeCell_(row[j]));
+    out.push(copy);
+  }
+  return out;
+}
+
+function sheetValues_(sh) {
+  var last = 0;
+  var lastCol = 0;
+  try {
+    last = Number(sh.getLastRow()) || 0;
+    lastCol = Number(sh.getLastColumn()) || 0;
+  } catch (err) {
+    return [];
+  }
+  if (last < 1 || lastCol < 1) return [];
+  lastCol = Math.min(lastCol, 80);
+  var CHUNK = 2500;
+  var grid = [];
+  var r = 1;
+  while (r <= last) {
+    var n = Math.min(CHUNK, last - r + 1);
+    var part = sh.getRange(r, 1, n, lastCol).getValues();
+    var i;
+    for (i = 0; i < part.length; i += 1) grid.push(part[i]);
+    r += n;
+  }
+  return sanitizeGrid_(grid);
+}
+
+function fingerprint_(rec) {
+  return [
+    rec.dni, rec.fecha, rec.area, rec.cargo, rec.semana,
+    rec.hrsHe, rec.impHe, rec.hrs25, rec.hrs35, rec.hrs100, rec.imp,
+  ].join("|");
+}
+
+function readOneSheet_(sh) {
+  var name = "";
+  try { name = String(sh.getName() || ""); } catch (err) { return { skip: true }; }
+  if (skipSheetName_(name)) return { skip: true };
+  var last = 0;
+  try { last = Number(sh.getLastRow()) || 0; } catch (err2) { last = 0; }
+  if (name === "PlanillaGeneralDetallado" && last <= 3) {
+    return { meta: { name: name, tipo: "plantilla", filas: 0, columnas: [], omitidas: 0 } };
+  }
+  var values = sheetValues_(sh);
+  if (!values.length || values.length < 2) {
+    return { meta: { name: name, tipo: "vacia", filas: 0, columnas: [], omitidas: 0 } };
+  }
+  var parsed;
+  try {
+    parsed = parseAoA_(values, name, sheetFecha_(sh, name, values.length > 3));
+  } catch (errP) {
+    return {
+      meta: {
+        name: name,
+        tipo: "error",
+        filas: 0,
+        columnas: [],
+        omitidas: 0,
+        error: String(errP && errP.message ? errP.message : errP),
+      },
+    };
+  }
   return {
-    row1: ["Apellidos y Nombres", "DNI", "Fecha Ingreso", "Fecha Cese", "Cargo", "ÁREA", "ETAPA", "JORNAL", "Ingresos"],
-    row2: ["", "", "", "", "", "", "", "", "HORAS EXTRAS", "", "Horas 100%", "", "B.Asistencia", "", "B.Labores", "", "D. Medico", "", "BONO COSECHA", "", "REINTEGROS", "", "Movilidad", "", "TOTAL PLANILLA"],
-    row3: ["", "", "", "", "", "", "", "", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", ""],
-  };
-}
-
-function fillPlantilla_(sh, name) {
-  var t = plantillaRows_();
-  var cols = 25;
-  if (sh.getLastRow() >= 3) {
-    paintHeader_(sh, cols, 3, "#c5c9ce");
-    return sh;
-  }
-  sh.clear();
-  if (name) sh.setName(name);
-  sh.getRange(1, 1, 1, t.row1.length).setValues([t.row1]);
-  sh.getRange(2, 1, 1, t.row2.length).setValues([t.row2]);
-  sh.getRange(3, 1, 1, t.row3.length).setValues([t.row3]);
-  try { sh.getRange(1, 9, 1, 16).merge(); } catch (err1) {}
-  var c;
-  for (c = 9; c <= 23; c += 2) mergePair_(sh, 2, c);
-  sh.setColumnWidth(1, 220);
-  sh.setColumnWidth(2, 90);
-  sh.setRowHeights(1, 3, 26);
-  paintHeader_(sh, cols, 3, "#c5c9ce");
-  return sh;
-}
-
-function ensurePlanilla_(ss) {
-  var sh = ss.getSheetByName("PlanillaGeneralDetallado") || ss.insertSheet("PlanillaGeneralDetallado");
-  fillPlantilla_(sh, "PlanillaGeneralDetallado");
-}
-
-function ensureHojaDia_(ss) {
-  var name = hoyHoja_();
-  var sh = ss.getSheetByName(name);
-  if (sh) {
-    fillPlantilla_(sh, name);
-    return sh;
-  }
-  var hoja1 = ss.getSheetByName("Hoja 1") || ss.getSheetByName("Hoja1") || ss.getSheetByName("Sheet1") || ss.getSheetByName("Sheet 1");
-  if (hoja1 && hoja1.getLastRow() === 0) {
-    hoja1.setName(name);
-    fillPlantilla_(hoja1, name);
-    return hoja1;
-  }
-  sh = ss.insertSheet(name);
-  fillPlantilla_(sh, name);
-  return sh;
-}
-
-function prepareHojasNuevas_(ss) {
-  var sheets = ss.getSheets();
-  var i;
-  for (i = 0; i < sheets.length; i += 1) {
-    var sh = sheets[i];
-    var n = sh.getName();
-    if (n === "PlanillaGeneralDetallado") continue;
-    if (/^config/i.test(n) || /^instrucc/i.test(n)) continue;
-    if (!(/^hoja\s*\d+$/i.test(n) || /^sheet\s*\d+$/i.test(n))) continue;
-    if (sh.getLastRow() === 0) fillPlantilla_(sh, n);
-  }
-}
-
-function loadPack_() {
-  var ss = getSpreadsheet();
-  try {
-    var hit = CacheService.getScriptCache().get(CACHE_KEY);
-    if (hit) return JSON.parse(hit);
-  } catch (err) {}
-  var sheets = ss.getSheets();
-  var all = [];
-  var meta = [];
-  var seen = {};
-  var i;
-  for (i = 0; i < sheets.length; i += 1) {
-    var sh = sheets[i];
-    var name = sh.getName();
-    if (/^config/i.test(name) || /^instrucc/i.test(name)) continue;
-    if (name === "PlanillaGeneralDetallado" && sh.getLastRow() <= 3) {
-      meta.push({ name: name, tipo: "plantilla", filas: 0, columnas: [] });
-      continue;
-    }
-    var last = sh.getLastRow();
-    var lastCol = sh.getLastColumn();
-    if (last < 2 || lastCol < 2) {
-      meta.push({ name: name, tipo: "vacia", filas: 0, columnas: [] });
-      continue;
-    }
-    var values = sh.getRange(1, 1, last, lastCol).getValues();
-    var parsed = parseAoA_(values, name);
-    meta.push({
+    meta: {
       name: name,
       tipo: parsed.tipo,
       filas: parsed.records.length,
       columnas: parsed.columnas,
       omitidas: parsed.omitidas,
-    });
-    parsed.records.forEach(function (rec) {
-      var fp = rec.dni + "|" + rec.fecha + "|" + rec.area + "|" + rec.cargo + "|" + rec.semana + "|" + rec.hrsHe + "|" + rec.impHe + "|" + rec.hrs25 + "|" + rec.hrs35 + "|" + rec.hrs100 + "|" + rec.imp;
-      if (seen[fp]) return;
-      seen[fp] = 1;
-      all.push(rec);
-    });
+    },
+    records: parsed.records || [],
+  };
+}
+
+function loadPack_() {
+  var ss = getSpreadsheet();
+  try { CacheService.getScriptCache().remove(CACHE_KEY); } catch (err0) {}
+  var sheets = [];
+  try { sheets = ss.getSheets() || []; } catch (err) {
+    return { ok: false, error: "lectura_fallida", message: "No se pudieron listar las hojas.", records: [], sheets: [], total: 0 };
   }
-  var pack = {
+  var all = [];
+  var meta = [];
+  var seen = {};
+  var i;
+  for (i = 0; i < sheets.length; i += 1) {
+    try {
+      var one = readOneSheet_(sheets[i]);
+      if (one.skip) continue;
+      meta.push(one.meta);
+      (one.records || []).forEach(function (rec) {
+        var fp = fingerprint_(rec);
+        if (seen[fp]) return;
+        seen[fp] = 1;
+        all.push(rec);
+      });
+    } catch (errSheet) {
+      var failed = "hoja";
+      try { failed = String(sheets[i].getName() || "hoja"); } catch (errN) {}
+      meta.push({
+        name: failed,
+        tipo: "error",
+        filas: 0,
+        columnas: [],
+        omitidas: 0,
+        error: String(errSheet && errSheet.message ? errSheet.message : errSheet),
+      });
+    }
+  }
+  return {
     ok: true,
     app: APP,
     records: all,
@@ -299,11 +335,6 @@ function loadPack_() {
     generatedAt: Utilities.formatDate(new Date(), TZ, "dd-MM-yyyy HH:mm:ss"),
     total: all.length,
   };
-  try {
-    var raw = JSON.stringify(pack);
-    if (raw.length < 90000) CacheService.getScriptCache().put(CACHE_KEY, raw, CACHE_TTL);
-  } catch (err2) {}
-  return pack;
 }
 
 function meta_() {
@@ -318,12 +349,11 @@ function meta_() {
 }
 
 function fold_(s) {
-  return String(s == null ? "" : s)
-    .toLowerCase()
-    .replace(/á/g, "a").replace(/é/g, "e").replace(/í/g, "i").replace(/ó/g, "o").replace(/ú/g, "u").replace(/ñ/g, "n")
-    .replace(/[^a-z0-9%]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  var t = String(s == null ? "" : s).toLowerCase();
+  try { t = t.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch (err) {
+    t = t.replace(/á/g, "a").replace(/é/g, "e").replace(/í/g, "i").replace(/ó/g, "o").replace(/ú/g, "u").replace(/ñ/g, "n");
+  }
+  return t.replace(/[^a-z0-9%]+/g, " ").replace(/\s+/g, " ").trim();
 }
 function pad_(n) {
   n = Number(n) || 0;
@@ -339,12 +369,23 @@ function asText_(v) {
 function asNumber_(v) {
   if (v == null || v === "") return 0;
   if (typeof v === "number") return isFinite(v) ? v : 0;
+  if (typeof v === "boolean") return v ? 1 : 0;
   if (Object.prototype.toString.call(v) === "[object Date]") return 0;
-  var s = String(v).trim().replace(/s\/\.?/gi, "").replace(/\s/g, "");
+  var s = String(v).trim();
+  if (!s || s.charAt(0) === "#") return 0;
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) {
+    var p = s.split(":");
+    return Number(p[0]) + Number(p[1]) / 60 + Number(p[2] || 0) / 3600;
+  }
+  s = s.replace(/s\/\.?/gi, "").replace(/\s/g, "");
   if (s.indexOf(",") >= 0 && s.indexOf(".") >= 0) {
     if (s.lastIndexOf(",") > s.lastIndexOf(".")) s = s.replace(/\./g, "").replace(",", ".");
     else s = s.replace(/,/g, "");
-  } else if (s.indexOf(",") >= 0) s = s.replace(",", ".");
+  } else if (s.indexOf(",") >= 0 && /^\d{1,3}(,\d{3})+$/.test(s)) {
+    s = s.replace(/,/g, "");
+  } else if (s.indexOf(",") >= 0) {
+    s = s.replace(",", ".");
+  }
   var n = parseFloat(s);
   return isFinite(n) ? n : 0;
 }
@@ -357,7 +398,8 @@ function hours_(n) {
   return money_(n);
 }
 function digits_(s) {
-  return String(s || "").replace(/\D/g, "").slice(0, 12);
+  if (typeof s === "number" && isFinite(s)) return String(Math.round(Math.abs(s))).slice(0, 12);
+  return String(s == null ? "" : s).replace(/\D/g, "").slice(0, 12);
 }
 function parseDay_(v) {
   if (v == null || v === "") return "";
@@ -472,15 +514,15 @@ function cap_(kind) {
   return kind;
 }
 function identityKey_(a) {
-  if (a === "apellidos y nombres" || a === "trabajador" || a === "nombres y apellidos" || a === "nombre" || a === "apellidos") return "nombres";
-  if (a === "dni" || a === "documento" || a === "nro documento" || a === "codigo trabajador") return "dni";
-  if (a === "fecha ingreso" || a === "f ingreso" || a === "f. ingreso") return "fechaIngreso";
+  if (a === "apellidos y nombres" || a === "trabajador" || a === "nombres y apellidos" || a === "nombre" || a === "apellidos" || a === "nombres") return "nombres";
+  if (a === "dni" || a === "documento" || a === "nro documento" || a === "numero documento" || a === "codigo trabajador" || a === "cod trabajador") return "dni";
+  if (a === "fecha ingreso" || a === "f ingreso") return "fechaIngreso";
   if (a === "fecha cese" || a === "f cese") return "fechaCese";
   if (a === "cargo" || a === "tipo de planilla") return "cargo";
-  if (a === "area" || a === "ceco") return "area";
+  if (a === "area" || a === "ceco" || a === "centro de costo") return "area";
   if (a === "etapa") return "etapa";
   if (a === "jornal") return "jornal";
-  if (a === "f trabajo" || a === "fecha trabajo" || a === "fecha" || a === "f-trabajo") return "fecha";
+  if (a === "f trabajo" || a === "fecha trabajo" || a === "fecha" || a === "f trabajo" || a === "f-trabajo") return "fecha";
   if (a === "semana") return "semana";
   if (a === "mes") return "mes";
   if (a === "ano" || a === "anio" || a === "year") return "anio";
@@ -503,18 +545,20 @@ function buildColumnMap_(rows) {
     function padRow(row) {
       var copy = row.slice();
       while (copy.length < widthPad) copy.push("");
-      return copy;
-    }
+  return copy;
+}
     row0 = padRow(row0);
     row1 = padRow(row1);
     row2 = padRow(row2);
     var filled0 = fillRight_(row0);
     var filled1 = fillRight_(row1);
-    var three = row1.concat(row2).some(function (x) {
+    function isLeaf_(x) {
       var f = fold_(x);
-      return f === "cantidad" || f === "importe";
-    });
-    var headerRows = three && row2.length ? 3 : three ? 2 : 1;
+      return f === "cantidad" || f === "importe" || f === "cant" || f === "hrs" || f === "horas";
+    }
+    var headerRows = 1;
+    if (row2.some(isLeaf_)) headerRows = 3;
+    else if (row1.some(isLeaf_)) headerRows = 2;
     var map = {};
     var kinds = {};
     var width = Math.max(filled0.length, filled1.length, row2.length, 1);
@@ -542,9 +586,15 @@ function buildColumnMap_(rows) {
   return best;
 }
 
-function parseAoA_(rows, sheetName) {
+function parseAoA_(rows, sheetName, extraFecha) {
   rows = rows || [];
   var period = parseSheetPeriod_(sheetName || "");
+  if (!period.fecha && extraFecha) {
+    period.fecha = extraFecha;
+    period.anio = Number(String(extraFecha).slice(0, 4)) || 0;
+    period.mes = Number(String(extraFecha).slice(5, 7)) || 0;
+    period.semana = isoWeek_(extraFecha);
+  }
   var found = buildColumnMap_(rows);
   var map = found.map || {};
   var start = (found.start || 0) + (found.headerRows || 1);
@@ -562,7 +612,11 @@ function parseAoA_(rows, sheetName) {
     if (empty) continue;
     var nombres = asText_(cell_(row, map.nombres));
     var dni = digits_(cell_(row, map.dni));
-    if (fold_(nombres) === "total" || fold_(dni) === "total") { skipped += 1; continue; }
+    var nomFold = fold_(nombres);
+    if (nomFold === "total" || nomFold.indexOf("total general") === 0 || nomFold.indexOf("totales") === 0 || fold_(dni) === "total") {
+      skipped += 1;
+      continue;
+    }
     if (!dni && !nombres) { skipped += 1; continue; }
     var rec = {
       dni: dni,
@@ -601,7 +655,7 @@ function parseAoA_(rows, sheetName) {
     if (rec.split) {
       rec.hrs = hours_(rec.hrs25 + rec.hrs35 + rec.hrs100);
       rec.imp = money_(rec.imp25 + rec.imp35 + rec.imp100);
-    } else {
+  } else {
       rec.hrs = hours_(rec.hrsHe + rec.hrs100 + rec.hrs25 + rec.hrs35);
       rec.imp = money_(rec.impHe + rec.imp100 + rec.imp25 + rec.imp35);
     }

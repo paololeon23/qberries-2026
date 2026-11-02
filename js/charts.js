@@ -67,11 +67,13 @@
     return {
       name: text,
       nameLocation: "middle",
-      nameGap: gap || (small ? 40 : 48),
+      nameGap: gap || (small ? 32 : 38),
       nameTextStyle: {
         color: COLORS.text,
         fontSize: small ? 11 : 12,
         fontWeight: 700,
+        align: "center",
+        padding: [10, 0, 0, 0],
       },
     };
   }
@@ -79,16 +81,15 @@
     var small = narrow();
     return {
       name: text,
-      nameLocation: "end",
-      nameRotate: 0,
-      nameGap: 8,
+      nameLocation: "middle",
+      nameRotate: 90,
+      nameGap: small ? 42 : 50,
       nameTextStyle: {
         color: COLORS.text,
         fontSize: small ? 11 : 12,
         fontWeight: 700,
-        align: "right",
-        verticalAlign: "bottom",
-        padding: [0, 6, 2, 0],
+        align: "center",
+        verticalAlign: "middle",
       },
     };
   }
@@ -126,8 +127,8 @@
   function labelFmt(showMoney) {
     return function (p) {
       if (!p.value || p.value < 0.009) return "";
-      if (p.value < (showMoney ? 250 : 8)) return "";
-      return showMoney ? exactMoney(p.value) : Number(p.value).toLocaleString("es-PE", { maximumFractionDigits: 2 });
+      if (p.value < (showMoney ? 80 : 8)) return "";
+      return showMoney ? money(p.value) : Number(p.value).toLocaleString("es-PE", { maximumFractionDigits: 2 });
     };
   }
   function logBase(n) {
@@ -177,10 +178,10 @@
   function gridBox(extra) {
     var small = narrow();
     var g = {
-      left: small ? 10 : 12,
+      left: small ? 52 : 60,
       right: small ? 12 : 16,
       top: small ? 32 : 36,
-      bottom: small ? 36 : 42,
+      bottom: small ? 36 : 40,
       containLabel: true,
     };
     if (extra) Object.keys(extra).forEach(function (k) { g[k] = extra[k]; });
@@ -188,7 +189,7 @@
   }
   function xAxisArea(areas) {
     var small = narrow();
-    var xn = xName("Área", small ? 62 : 78);
+    var xn = xName("Área", small ? 46 : 50);
     return {
       type: "category",
       data: areas,
@@ -197,11 +198,11 @@
       nameGap: xn.nameGap,
       nameTextStyle: xn.nameTextStyle,
       axisLabel: {
-        rotate: small ? 40 : 28,
+        rotate: small ? 28 : 18,
         color: COLORS.text,
         fontSize: small ? 9 : 10,
         interval: 0,
-        margin: 10,
+        margin: 6,
         hideOverlap: false,
       },
       axisTick: { show: false },
@@ -373,8 +374,8 @@
         s.label.fontWeight = 700;
         s.label.hideOverlap = true;
         s.label.formatter = function (p) {
-          if (!p.value || p.value < 250) return "";
-          return exactMoney(p.value);
+          if (!p.value || p.value < 80) return "";
+          return money(p.value);
         };
         return s;
       }),
@@ -385,17 +386,17 @@
     var ch = get("chart-week");
     if (!ch) return;
     var rows = (agg.weeks || []).slice();
-    var cats = rows.map(function (r) { return String(r.semana); });
+    var cats = rows.map(function (r) { return "Semana " + r.semana; });
     var data = rows.map(function (r) { return r.imp; });
     var maxImp = 0;
     data.forEach(function (v) { if (Number(v) > maxImp) maxImp = Number(v); });
-    var xMax = Math.ceil((maxImp || 1) * 1.08 / 1000) * 1000;
+    var xMax = Math.ceil((maxImp || 1) * 1.12 / 100) * 100;
     var small = narrow();
-    var xn = xName("Importe (S/.)", small ? 26 : 30);
-    var yn = { name: "", nameLocation: "end", nameRotate: 0, nameGap: 0, nameTextStyle: {} };
+    var xn = xName("Importe (S/.)", small ? 28 : 32);
+    var yn = yName("");
     ch.setOption({
       animationDuration: 280,
-      grid: gridBox({ top: 18, right: small ? 14 : 20, bottom: small ? 28 : 32 }),
+      grid: gridBox({ top: 18, right: small ? 14 : 20, bottom: small ? 40 : 46, left: small ? 12 : 16 }),
       tooltip: {
         trigger: "axis",
         formatter: function (items) {
@@ -423,7 +424,7 @@
           fontSize: small ? 9 : 10,
           margin: 8,
           hideOverlap: true,
-          formatter: function (v) { return axisMoney(v); },
+          formatter: function (v) { return "S/ " + axisMoney(v); },
         },
         splitLine: { lineStyle: { color: "#edf1f4" } },
       },
@@ -443,9 +444,9 @@
       series: [{
         type: "bar",
         data: data,
-        barMinWidth: small ? 22 : 26,
-        barMaxWidth: small ? 32 : 38,
-        barCategoryGap: "18%",
+        barMinWidth: small ? 26 : 32,
+        barMaxWidth: small ? 40 : 48,
+        barCategoryGap: "16%",
         itemStyle: { color: COLORS.week, borderRadius: [0, 3, 3, 0] },
         label: {
           show: true,
@@ -455,7 +456,7 @@
           fontSize: small ? 10 : 11,
           formatter: function (p) {
             if (!p.value) return "";
-            if (p.value < maxImp * 0.14) return "";
+            if (p.value < maxImp * 0.12) return "";
             return money(p.value);
           },
         },

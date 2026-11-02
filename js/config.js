@@ -17,7 +17,7 @@
   }
   root.QBE.config = {
     apiUrl: apiUrl,
-    timeoutMs: 25000,
+    timeoutMs: 40000,
     staleMs: 8000,
     retries: 1,
     moneda: "PEN",

@@ -69,30 +69,42 @@ assert(d.records[0].mes === 3, "mes Marzo = 3");
 assert(d.records[0].fecha === "2026-03-09", "F-TRABAJO parseada");
 assert(d.records[0].imp25 === 2.45, "importe 25% sin inventar horas");
 
-var demo = QBE.data.buildDemo();
-assert(demo.length > 50, "demo genera registros");
-var filt = QBE.data.filterRecords(demo, { area: ["SANIDAD"] });
-var aAll = QBE.data.aggregate(demo);
+var rows = parsed.records.concat(d.records, [{
+  dni: "87654321",
+  nombres: "QUISPE ANA",
+  area: "RIEGO",
+  cargo: "AUXILIAR",
+  anio: 2026,
+  mes: 3,
+  semana: 10,
+  fecha: "2026-03-02",
+  hrs25: 0,
+  hrs35: 0,
+  hrs100: 0,
+  hrsHe: 4,
+  imp25: 0,
+  imp35: 0,
+  imp100: 0,
+  impHe: 26.24,
+  hrs: 4,
+  imp: 26.24,
+  split: false,
+}]);
+var filt = QBE.data.filterRecords(rows, { area: ["SANIDAD"] });
+var aAll = QBE.data.aggregate(rows);
 var aSan = QBE.data.aggregate(filt);
 assert(aSan.kpis.totalHrs <= aAll.kpis.totalHrs, "filtro reduce o iguala horas");
-var sumHrs = demo.reduce(function (s, r) { return s + r.hrs; }, 0);
-var sumImp = demo.reduce(function (s, r) { return s + r.imp; }, 0);
+assert(filt.every(function (r) { return r.area === "SANIDAD"; }), "filtro solo SANIDAD");
+var sumHrs = rows.reduce(function (s, r) { return s + r.hrs; }, 0);
+var sumImp = rows.reduce(function (s, r) { return s + r.imp; }, 0);
 assert(Math.abs(QBE.parser.hours(sumHrs) - aAll.kpis.totalHrs) < 0.02, "KPI horas = suma registros");
 assert(Math.abs(QBE.parser.money(sumImp) - aAll.kpis.totalImp) < 0.05, "KPI costo = suma registros");
 var dni = {};
-demo.forEach(function (r) { dni[r.dni] = 1; });
+rows.forEach(function (r) { dni[r.dni] = 1; });
 assert(Object.keys(dni).length === aAll.kpis.colaboradores, "KPI colaboradores = DNI únicos");
 var weeks = aAll.weeks.map(function (w) { return w.semana; });
 var sorted = weeks.slice().sort(function (a, b) { return a - b; });
 assert(weeks.join() === sorted.join(), "semanas ordenadas");
-var fp = {};
-var dup = 0;
-demo.forEach(function (r) {
-  var k = QBE.parser.fingerprint(r);
-  if (fp[k]) dup += 1;
-  fp[k] = 1;
-});
-assert(dup === 0, "demo sin huellas duplicadas");
 
 var many = [];
 var i;

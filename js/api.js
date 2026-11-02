@@ -56,7 +56,7 @@
       if (!data || data.ok === false) throw { message: (data && data.message) || "El servidor no devolvió horas extras." };
       return data;
     }
-    return fetchJson(url + sep + "action=he", QBE.config.timeoutMs).then(ok).catch(function () {
+    return fetchJson(url + sep + "action=he&fresh=1&_=" + Date.now(), QBE.config.timeoutMs).then(ok).catch(function () {
       return post("he", {}).then(ok);
     });
   }

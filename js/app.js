@@ -1,7 +1,7 @@
 /* Orquesta filtros, KPI, gráficos y tabla sobre una sola fuente. */
 (function (root) {
   var QBE = root.QBE || (root.QBE = {});
-  var pack = { records: [], source: "demo", sheets: [], generatedAt: "" };
+  var pack = { records: [], source: "empty", sheets: [], generatedAt: "" };
   var filtered = [];
   var agg = null;
   var busy = false;
@@ -43,14 +43,27 @@
     return bits.length ? bits.join(" · ") : "Todos los registros";
   }
 
+  function completeRecords(records) {
+    var P = QBE.parser;
+    if (!P) return records || [];
+    (records || []).forEach(function (r) {
+      if (!r) return;
+      if (r.fecha && !Number(r.semana)) r.semana = P.isoWeek(r.fecha);
+      if (r.fecha && !Number(r.anio)) r.anio = Number(String(r.fecha).slice(0, 4)) || 0;
+      if (r.fecha && !Number(r.mes)) r.mes = Number(String(r.fecha).slice(5, 7)) || 0;
+      if (r.mes && !r.mesNombre) r.mesNombre = P.mesNombre(r.mes);
+      if (r.fecha && !r.fechaLarga) r.fechaLarga = P.fechaLarga(r.fecha);
+    });
+    return records || [];
+  }
+
   function usePack(next, source) {
     pack = {
-      records: (next && next.records) || [],
+      records: completeRecords((next && next.records) || []),
       source: source || (next && next.source) || "api",
       sheets: (next && next.sheets) || [],
       generatedAt: (next && next.generatedAt) || "",
       fileName: (next && next.fileName) || pack.fileName || "",
-      demo: source === "demo",
     };
     QBE.perf.cacheClear();
     QBE.filters.render(QBE.data.optionsFrom(pack.records));
@@ -59,21 +72,24 @@
     persist();
     var n = pack.records.length;
     var extra = pack.sheets.length ? " · " + pack.sheets.length + " hoja" + (pack.sheets.length === 1 ? "" : "s") : "";
-    if (source === "demo") {
-      setStatus("Datos de ejemplo. Cargue el Excel de planilla para ver información real.", "demo");
-      setPlanillaStatus("Todavía no hay una planilla local.", "");
-    } else if (source === "excel") {
+    if (source === "excel") {
       setStatus("Planilla local · " + n.toLocaleString("es-PE") + " registros" + extra, "ok");
       setPlanillaStatus("Guardada en este equipo" + (pack.fileName ? " · " + pack.fileName : "") + " · " + n.toLocaleString("es-PE") + " registros.", "ok");
+    } else if (source === "api") {
+      if (n) setStatus("Planilla en línea · " + n.toLocaleString("es-PE") + " registros" + extra, "ok");
+      else setStatus("La planilla en línea no tiene filas de horas extras todavía.", "warn");
+      setPlanillaStatus("Todavía no hay una planilla local. El panel lee la planilla en línea.", "");
     } else {
-      setStatus("Planilla actualizada · " + n.toLocaleString("es-PE") + " registros" + extra, "ok");
+      setStatus("Sin datos. El panel lee la planilla en línea o un Excel en Cargar planilla.", "");
+      setPlanillaStatus("Todavía no hay una planilla local.", "");
     }
-    var banner = $("demo-banner");
-    if (banner) banner.hidden = source !== "demo";
   }
 
   function persist() {
-    if (pack.source === "demo") return;
+    if (pack.source !== "excel") {
+      try { root.localStorage.removeItem(QBE.config.cacheKey); } catch (err) {}
+      return;
+    }
     QBE.perf.lsSet(QBE.config.cacheKey, {
       records: pack.records,
       source: pack.source,
@@ -185,12 +201,13 @@
     var reload = $("btn-reload");
     if (reload) reload.addEventListener("click", function () { QBE.app.reload(); });
 
-    var cached = QBE.perf.lsGet(QBE.config.cacheKey);
     try {
-      if (cached && cached.records && cached.records.length && cached.source !== "demo") {
-        usePack(cached, cached.source);
+      var cached = QBE.perf.lsGet(QBE.config.cacheKey);
+      if (cached && cached.source === "excel" && cached.records && cached.records.length) {
+        usePack(cached, "excel");
       } else {
-        usePack({ records: QBE.data.buildDemo(), sheets: [{ name: "DEMO", filas: 0 }] }, "demo");
+        try { root.localStorage.removeItem(QBE.config.cacheKey); } catch (err0) {}
+        usePack({ records: [], sheets: [] }, "empty");
       }
     } catch (err) {
       setStatus((err && err.message) || "No se pudo iniciar el dashboard.", "err");
@@ -216,14 +233,13 @@
     return QBE.api.loadHe().then(function (data) {
       if (!data || pack.source === "excel") return;
       var records = data.records || [];
-      if (!records.length && pack.source !== "demo") return;
+      usePack(data, "api");
       if (records.length) {
-        usePack(data, "api");
         if (QBE.audit) QBE.audit.add("Actualizar en línea", records.length + " registros");
         if (QBE.shell && QBE.shell.toast) QBE.shell.toast("Planilla actualizada");
-      } else setStatus("La planilla en línea no tiene filas de horas extras todavía.", "warn");
+      }
     }).catch(function () {
-      if (pack.source === "demo") setStatus("No se pudo actualizar en línea. Cargue el Excel en Cargar planilla.", "warn");
+      setStatus("No se pudo leer la planilla en línea. Use Cargar planilla si tiene el Excel.", "warn");
       if (QBE.shell && QBE.shell.toast) QBE.shell.toast("No se pudo actualizar en línea", true);
     }).finally(function () {
       setLoading(false);

@@ -21,11 +21,18 @@ function makeSheet(name, values) {
   }
   return {
     getName: function () { return name; },
+    getSheetId: function () {
+      var i;
+      var n = 1;
+      for (i = 0; i < name.length; i += 1) n += name.charCodeAt(i);
+      return n;
+    },
     getLastRow: function () { return values.length; },
     getLastColumn: function () { return width(); },
     getRange: function (r1, c1, nRows, nCols) {
       return {
         getValues: function () {
+          if (name === "ROTA") throw new Error("no se puede leer");
           var out = [];
           var i, j, row;
           for (i = r1 - 1; i < r1 - 1 + nRows; i += 1) {
@@ -68,6 +75,7 @@ function ss() {
   return {
     getId: function () { return "ss-test"; },
     getUrl: function () { return "https://docs.google.com/spreadsheets/d/ss-test"; },
+    getActiveSheet: function () { return sheets[sheets.length - 1] || null; },
     getSheets: function () { return sheets; },
     getSheetByName: function (n) {
       var i;
@@ -142,6 +150,16 @@ var ctx = {
     getActive: function () { return ss(); },
     create: function () { return ss(); },
   },
+  ScriptApp: {
+    getProjectTriggers: function () { return []; },
+    newTrigger: function () {
+      return {
+        forSpreadsheet: function () {
+          return { onChange: function () { return { create: function () {} }; } };
+        },
+      };
+    },
+  },
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "gas", "Code.gs"), "utf8"), ctx);
@@ -192,6 +210,9 @@ var per = ctx.parseSheetPeriod_("02-11-2026");
 assert(per.fecha === "2026-11-02" && per.anio === 2026 && per.mes === 11, "nombre de hoja = fecha");
 var dated = ctx.parseAoA_(planilla, "02-11-2026");
 assert(dated.records[0].fecha === "2026-11-02", "filas sin F-TRABAJO heredan fecha de la hoja");
+var hojaSinNombre = ctx.parseAoA_(planilla, "Hoja 3", "2026-11-01");
+assert(hojaSinNombre.records[0].fecha === "2026-11-01", "Hoja 3 toma la fecha del día en que se creó");
+assert(hojaSinNombre.records[0].semana === ctx.isoWeek_("2026-11-01"), "Hoja 3 trae semana ISO para el gráfico");
 
 console.log("== doGet / login / pack ==");
 var ping = data(ctx.doGet({ parameter: { action: "ping" } }));
@@ -216,10 +237,9 @@ var pack = ctx.loadPack_();
 assert(pack.ok === true, "loadPack ok");
 assert(pack.total === 2, "dedup de hojas iguales = 2 registros");
 assert(pack.sheets.every(function (s) { return s.name !== "Config" && s.name !== "Instrucciones"; }), "omite Config e Instrucciones");
-assert(pack.sheets.every(function (s) { return s.name !== "Hoja 1"; }), "renombra o quita Hoja 1 vacía");
-assert(pack.sheets.some(function (s) { return s.name === "PlanillaGeneralDetallado"; }), "hoja PlanillaGeneralDetallado");
+assert(pack.sheets.some(function (s) { return s.name === "PlanillaGeneralDetallado"; }), "lee PlanillaGeneralDetallado si tiene data");
 assert(pack.sheets.every(function (s) { return s.name !== "DETALLE_HE"; }), "no crea DETALLE_HE");
-assert(pack.sheets.some(function (s) { return /^\d{2}-\d{2}-\d{4}$/.test(s.name); }), "crea hoja del día dd-MM-yyyy");
+assert(pack.sheets.every(function (s) { return !/^\d{2}-\d{2}-\d{4}$/.test(s.name); }), "no inventa hoja con fecha");
 assert(typeof pack.generatedAt === "string" && pack.generatedAt.length > 8, "generatedAt");
 
 var meta = ctx.meta_();
@@ -237,18 +257,59 @@ hoja2[6] = ["FLORES EVA", "33333333", "02/02/2025", "", "AUXILIAR", "RIEGO", "",
 var hoja3 = planilla.map(function (r) { return r.slice(); });
 hoja3[3] = ["MAMANI JOSE", "44444444", "01/01/2025", "", "OBRERO", "COSECHA", "", 52.47, 5, 32.8, 0, 0, 0, 0];
 hoja3[6] = ["Total", "", "", "", "", "", "", "", 5, 32.8, 0, 0, 0, 0];
+var fechaHoja = planilla.map(function (r) { return r.slice(); });
+fechaHoja[3] = ["SALAS PEPE", "55555555", "01/01/2025", "", "OBRERO", "PACKING", "", 52.47, 2, 13.12, 0, 0, 0, 0];
+fechaHoja[6] = ["Total", "", "", "", "", "", "", "", 2, 13.12, 0, 0, 0, 0];
 sheets = [
   makeSheet("PlanillaGeneralDetallado", planilla.slice(0, 3)),
   makeSheet("Hoja 2", hoja2),
   makeSheet("Hoja 3", hoja3),
+  makeSheet("01-11-2026", fechaHoja),
 ];
 cache = {};
 var pack23 = ctx.loadPack_();
 assert(pack23.sheets.some(function (s) { return s.name === "Hoja 2"; }), "lee Hoja 2");
 assert(pack23.sheets.some(function (s) { return s.name === "Hoja 3"; }), "lee Hoja 3");
-assert(pack23.total === 3, "junta Hoja 2 + Hoja 3 (sin Total ni ceros)");
+assert(pack23.sheets.some(function (s) { return s.name === "01-11-2026"; }), "lee hoja con fecha");
+assert(pack23.total === 4, "junta Hoja 2 + Hoja 3 + fecha (sin Total ni ceros)");
 assert(pack23.records.some(function (r) { return r.dni === "22222222"; }), "registro de Hoja 2");
 assert(pack23.records.some(function (r) { return r.dni === "44444444"; }), "registro de Hoja 3");
+assert(pack23.records.every(function (r) { return Number(r.semana) > 0; }), "GET trae semana en todas las filas");
+assert(pack23.records.some(function (r) { return r.dni === "55555555" && r.fecha === "2026-11-01"; }), "registro de la hoja con fecha");
+
+cache["QBE_HE_PACK"] = JSON.stringify({ ok: true, total: 99, records: [], sheets: [] });
+ctx.onSheetChange_({ changeType: "INSERT_GRID" });
+assert(!cache["QBE_HE_PACK"], "al pulsar + se limpia el caché para leer la hoja nueva");
+
+var dniNum = ctx.parseAoA_([
+  ["Apellidos y Nombres", "DNI", "Cargo", "ÁREA", "Ingresos", ""],
+  ["", "", "", "", "HORAS EXTRAS", ""],
+  ["", "", "", "", "Cantidad", "Importe"],
+  ["CARLOS ENRIQUE", 70000022, "COSECHADOR", "COSECHA", 2, "13,12"],
+], "Hoja 4");
+assert(dniNum.records.length === 1 && dniNum.records[0].dni === "70000022", "DNI numérico exacto");
+assert(dniNum.records[0].impHe === 13.12, "importe 13,12 exacto");
+assert(dniNum.records[0].area === "COSECHA", "área COSECHA");
+
+var withErr = planilla.map(function (r) { return r.slice(); });
+withErr[3] = ["X", "99999999", "", "", "OBRERO", "RIEGO", "", 50, { message: "#N/A" }, "#REF!", 1, 13.12];
+var errParsed = ctx.parseAoA_(withErr, "Hoja 5");
+assert(errParsed.records.some(function (r) { return r.dni === "99999999" && r.hrs100 === 1 && r.imp100 === 13.12; }), "celda #N/A no tumba la fila");
+
+sheets = [
+  makeSheet("Hoja 3", hoja3),
+  makeSheet("ROTA", planilla),
+  makeSheet("Hoja 4", []),
+];
+cache = {};
+var packSafe = ctx.loadPack_();
+assert(packSafe.ok === true, "pack no falla si una hoja está rota");
+assert(packSafe.records.some(function (r) { return r.dni === "44444444"; }), "sigue leyendo Hoja 3");
+assert(packSafe.sheets.some(function (s) { return s.name === "ROTA" && s.tipo === "error"; }), "marca la hoja rota sin cortar");
+assert(packSafe.sheets.some(function (s) { return s.name === "Hoja 4" && s.tipo === "vacia"; }), "Hoja 4 vacía no rompe");
+
+var heSafe = data(ctx.doGet({ parameter: { action: "he" } }));
+assert(heSafe.ok === true && heSafe.records.some(function (r) { return r.dni === "44444444"; }), "doGet he sigue ok con hoja rota");
 
 console.log("\n" + oks + " ok, " + fails + " fail");
 process.exit(fails ? 1 : 0);

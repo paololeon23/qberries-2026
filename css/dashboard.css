@@ -34,6 +34,7 @@
   gap: 8px;
   flex: 0 0 auto;
   min-height: 28px;
+  margin-bottom: 6px;
 }
 .card h2 {
   margin: 0;
@@ -61,6 +62,7 @@
   width: 100%;
   min-height: 0;
   height: auto;
+  overflow: visible;
 }
 #chart-cost-area, #chart-week { height: auto; min-height: 0; }
 .page-title { margin: 4px 0 14px; }

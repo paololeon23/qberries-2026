@@ -131,15 +131,6 @@ button { cursor: pointer; border: 0; background: none; }
 }
 .tool-btn { background: var(--red); color: #fff; border-color: var(--red); }
 .ghost-btn:hover { background: var(--qb-soft); }
-.demo-banner {
-  background: #fff8e0;
-  border: 1px solid #ffe08a;
-  color: #7a5b00;
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 11px;
-  margin-bottom: 6px;
-}
 .loading {
   position: fixed;
   inset: 0;
