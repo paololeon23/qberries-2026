@@ -163,18 +163,34 @@
     return out;
   }
   function parseSheetPeriod(name) {
+    var raw = String(name || "");
     var f = fold(name);
     var out = { anio: 0, mes: 0, semana: 0, fecha: "" };
+    var iso = raw.match(/(20\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    var pe = raw.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if (iso) {
+      out.anio = Number(iso[1]);
+      out.mes = Number(iso[2]);
+      out.fecha = iso[1] + "-" + pad(iso[2]) + "-" + pad(iso[3]);
+    } else if (pe && Number(pe[1]) <= 31 && Number(pe[2]) <= 12) {
+      var y = Number(pe[3]);
+      if (y < 100) y += 2000;
+      out.anio = y;
+      out.mes = Number(pe[2]);
+      out.fecha = y + "-" + pad(pe[2]) + "-" + pad(pe[1]);
+    }
     var w = f.match(/semana\s*(\d{1,2})/);
     if (w) out.semana = Number(w[1]);
-    var y = f.match(/(20\d{2})/);
-    if (y) out.anio = Number(y[1]);
-    for (var i = 0; i < MESES.length; i += 1) {
-      if (f.indexOf(fold(MESES[i])) >= 0) out.mes = i + 1;
+    if (!out.anio) {
+      var y2 = f.match(/(20\d{2})/);
+      if (y2) out.anio = Number(y2[1]);
     }
-    if (MESES_ALT[f]) out.mes = MESES_ALT[f] + 1;
-    var iso = f.match(/(20\d{2})[^\d](\d{1,2})[^\d](\d{1,2})/);
-    if (iso) out.fecha = iso[1] + "-" + pad(iso[2]) + "-" + pad(iso[3]);
+    if (!out.mes) {
+      for (var i = 0; i < MESES.length; i += 1) {
+        if (f.indexOf(fold(MESES[i])) >= 0) out.mes = i + 1;
+      }
+      if (MESES_ALT[f]) out.mes = MESES_ALT[f] + 1;
+    }
     return out;
   }
 

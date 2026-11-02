@@ -10,12 +10,15 @@
  * Flujo: POST JSON { action, payload } → lock → login | he
  * Lectura: GET /exec?action=he → { ok, records, sheets, generatedAt }
  *
- * Lee TODAS las hojas. No inventa horas ni importes.
+ * Lee TODAS las hojas: Hoja 2, Hoja 3, 01-11-2026, copias… cada una nueva entra.
+ * No inventa horas ni importes.
+ * Plantilla: PlanillaGeneralDetallado (solo encabezados).
+ * Cada día se crea una hoja con la fecha de Lima: 02-11-2026, 03-11-2026…
+ * El GET junta todas. Filas repetidas (misma huella) se omiten.
  * Encabezados reales del Excel "Reporte Planilla General Detallado":
  *   Apellidos y Nombres, DNI, Fecha Ingreso, Fecha Cese, Cargo, ÁREA, ETAPA, JORNAL
  *   HORAS EXTRAS (Cantidad, Importe), Horas 100% (Cantidad, Importe)
  * Si una hoja trae 25%, 35%, F-TRABAJO, SEMANA o MES, también se leen.
- * Hojas nuevas se acumulan. Filas repetidas (misma huella) se omiten.
  */
 
 var TZ = "America/Lima";
@@ -24,7 +27,8 @@ var CACHE_KEY = "QBE_HE_PACK";
 var CACHE_TTL = 90;
 var USUARIO_ACCESO = "Administrador";
 var CLAVE_ACCESO = "eduardo2026";
-var HEADER_BG = "#1b1f24";
+var HEADER_BG = "#e8eaed";
+var HEADER_FG = "#3c4043";
 
 var MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"];
 
@@ -121,58 +125,137 @@ function getSpreadsheet() {
   }
   if (!ss) {
     ss = SpreadsheetApp.create("QBerries Horas Extras");
-    props.setProperty("SPREADSHEET_ID", ss.getId());
-    ensureSheets_(ss);
-  } else {
-    props.setProperty("SPREADSHEET_ID", ss.getId());
   }
+  props.setProperty("SPREADSHEET_ID", ss.getId());
+  ensureSheets_(ss);
   return ss;
 }
 
-function ensureSheets_(ss) {
-  ensurePlanilla_(ss);
-  ensureDetalle_(ss);
+function hoyYmd_() {
+  return Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd");
+}
+function hoyHoja_() {
+  return Utilities.formatDate(new Date(), TZ, "dd-MM-yyyy");
 }
 
-function paintHeader_(sh, headers, rows) {
+function ensureSheets_(ss) {
+  var def = ss.getSheetByName("Hoja 1") || ss.getSheetByName("Hoja1") || ss.getSheetByName("Sheet1");
+  if (def && def.getLastRow() === 0 && !ss.getSheetByName("PlanillaGeneralDetallado")) {
+    def.setName("PlanillaGeneralDetallado");
+  }
+  ensurePlanilla_(ss);
+  ensureHojaDia_(ss);
+  prepareHojasNuevas_(ss);
+  dropEmptyDefaults_(ss);
+}
+
+function dropEmptyDefaults_(ss) {
+  var keep = hoyHoja_();
+  ["Hoja 1", "Hoja1", "Sheet1", "Sheet 1", "DETALLE_HE"].forEach(function (name) {
+    if (name === keep) return;
+    var extra = ss.getSheetByName(name);
+    if (!extra) return;
+    var empty = name === "DETALLE_HE" ? extra.getLastRow() <= 1 : extra.getLastRow() === 0;
+    if (empty && ss.getSheets().length > 1) ss.deleteSheet(extra);
+  });
+}
+
+function paintHeader_(sh, cols, rows, tabColor) {
   if (!sh) return;
   rows = Number(rows) || 1;
-  var cols = Math.max(sh.getLastColumn(), (headers && headers.length) || 1, 1);
+  cols = Math.max(Number(cols) || 1, sh.getLastColumn() || 1, 1);
   sh.setFrozenRows(rows);
-  sh.getRange(1, 1, rows, cols).setFontWeight("bold").setBackground(HEADER_BG).setFontColor("#FFFFFF");
+  sh.getRange(1, 1, rows, cols)
+    .setFontWeight("bold")
+    .setBackground(HEADER_BG)
+    .setFontColor(HEADER_FG)
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle")
+    .setWrap(true);
+  sh.getRange(1, 1, sh.getMaxRows(), cols)
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  if (tabColor) sh.setTabColor(tabColor);
+}
+
+function mergePair_(sh, row, startCol) {
+  try {
+    sh.getRange(row, startCol, 1, 2).merge();
+  } catch (err) {}
+}
+
+function plantillaRows_() {
+  return {
+    row1: ["Apellidos y Nombres", "DNI", "Fecha Ingreso", "Fecha Cese", "Cargo", "ÁREA", "ETAPA", "JORNAL", "Ingresos"],
+    row2: ["", "", "", "", "", "", "", "", "HORAS EXTRAS", "", "Horas 100%", "", "B.Asistencia", "", "B.Labores", "", "D. Medico", "", "BONO COSECHA", "", "REINTEGROS", "", "Movilidad", "", "TOTAL PLANILLA"],
+    row3: ["", "", "", "", "", "", "", "", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", ""],
+  };
+}
+
+function fillPlantilla_(sh, name) {
+  var t = plantillaRows_();
+  var cols = 25;
+  if (sh.getLastRow() >= 3) {
+    paintHeader_(sh, cols, 3, "#c5c9ce");
+    return sh;
+  }
+  sh.clear();
+  if (name) sh.setName(name);
+  sh.getRange(1, 1, 1, t.row1.length).setValues([t.row1]);
+  sh.getRange(2, 1, 1, t.row2.length).setValues([t.row2]);
+  sh.getRange(3, 1, 1, t.row3.length).setValues([t.row3]);
+  try { sh.getRange(1, 9, 1, 16).merge(); } catch (err1) {}
+  var c;
+  for (c = 9; c <= 23; c += 2) mergePair_(sh, 2, c);
+  sh.setColumnWidth(1, 220);
+  sh.setColumnWidth(2, 90);
+  sh.setRowHeights(1, 3, 26);
+  paintHeader_(sh, cols, 3, "#c5c9ce");
+  return sh;
 }
 
 function ensurePlanilla_(ss) {
   var sh = ss.getSheetByName("PlanillaGeneralDetallado") || ss.insertSheet("PlanillaGeneralDetallado");
-  if (sh.getLastRow() >= 3) {
-    paintHeader_(sh, null, 3);
-    return;
-  }
-  var row1 = ["Apellidos y Nombres", "DNI", "Fecha Ingreso", "Fecha Cese", "Cargo", "ÁREA", "ETAPA", "JORNAL", "Ingresos"];
-  var row2 = ["", "", "", "", "", "", "", "", "HORAS EXTRAS", "", "Horas 100%", "", "B.Asistencia", "", "B.Labores", "", "D. Medico", "", "BONO COSECHA", "", "REINTEGROS", "", "Movilidad", "", "TOTAL PLANILLA"];
-  var row3 = ["", "", "", "", "", "", "", "", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", "Cantidad", "Importe", ""];
-  sh.clear();
-  sh.getRange(1, 1, 1, row1.length).setValues([row1]);
-  sh.getRange(2, 1, 1, row2.length).setValues([row2]);
-  sh.getRange(3, 1, 1, row3.length).setValues([row3]);
-  paintHeader_(sh, row3, 3);
+  fillPlantilla_(sh, "PlanillaGeneralDetallado");
 }
 
-function ensureDetalle_(ss) {
-  var sh = ss.getSheetByName("DETALLE_HE") || ss.insertSheet("DETALLE_HE");
-  var headers = ["DNI", "Apellidos y Nombres", "ÁREA", "CARGO", "MES", "SEMANA", "F-TRABAJO", "HRS. 25%", "IMP. 25%", "HRS. 35%", "IMP. 35%", "Horas 100%", "IMP. 100%", "TOTAL H.E.", "HRS. EXTRAS S/."];
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+function ensureHojaDia_(ss) {
+  var name = hoyHoja_();
+  var sh = ss.getSheetByName(name);
+  if (sh) {
+    fillPlantilla_(sh, name);
+    return sh;
   }
-  paintHeader_(sh, headers, 1);
+  var hoja1 = ss.getSheetByName("Hoja 1") || ss.getSheetByName("Hoja1") || ss.getSheetByName("Sheet1") || ss.getSheetByName("Sheet 1");
+  if (hoja1 && hoja1.getLastRow() === 0) {
+    hoja1.setName(name);
+    fillPlantilla_(hoja1, name);
+    return hoja1;
+  }
+  sh = ss.insertSheet(name);
+  fillPlantilla_(sh, name);
+  return sh;
+}
+
+function prepareHojasNuevas_(ss) {
+  var sheets = ss.getSheets();
+  var i;
+  for (i = 0; i < sheets.length; i += 1) {
+    var sh = sheets[i];
+    var n = sh.getName();
+    if (n === "PlanillaGeneralDetallado") continue;
+    if (/^config/i.test(n) || /^instrucc/i.test(n)) continue;
+    if (!(/^hoja\s*\d+$/i.test(n) || /^sheet\s*\d+$/i.test(n))) continue;
+    if (sh.getLastRow() === 0) fillPlantilla_(sh, n);
+  }
 }
 
 function loadPack_() {
+  var ss = getSpreadsheet();
   try {
     var hit = CacheService.getScriptCache().get(CACHE_KEY);
     if (hit) return JSON.parse(hit);
   } catch (err) {}
-  var ss = getSpreadsheet();
   var sheets = ss.getSheets();
   var all = [];
   var meta = [];
@@ -182,6 +265,10 @@ function loadPack_() {
     var sh = sheets[i];
     var name = sh.getName();
     if (/^config/i.test(name) || /^instrucc/i.test(name)) continue;
+    if (name === "PlanillaGeneralDetallado" && sh.getLastRow() <= 3) {
+      meta.push({ name: name, tipo: "plantilla", filas: 0, columnas: [] });
+      continue;
+    }
     var last = sh.getLastRow();
     var lastCol = sh.getLastColumn();
     if (last < 2 || lastCol < 2) {
@@ -331,14 +418,33 @@ function fillRight_(row) {
   return out;
 }
 function parseSheetPeriod_(name) {
+  var raw = String(name || "");
   var f = fold_(name);
   var out = { anio: 0, mes: 0, semana: 0, fecha: "" };
+  var iso = raw.match(/(20\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  var pe = raw.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (iso) {
+    out.anio = Number(iso[1]);
+    out.mes = Number(iso[2]);
+    out.fecha = iso[1] + "-" + pad_(iso[2]) + "-" + pad_(iso[3]);
+  } else if (pe && Number(pe[1]) <= 31 && Number(pe[2]) <= 12) {
+    var y = Number(pe[3]);
+    if (y < 100) y += 2000;
+    out.anio = y;
+    out.mes = Number(pe[2]);
+    out.fecha = y + "-" + pad_(pe[2]) + "-" + pad_(pe[1]);
+  }
   var w = f.match(/semana\s*(\d{1,2})/);
   if (w) out.semana = Number(w[1]);
-  var y = f.match(/(20\d{2})/);
-  if (y) out.anio = Number(y[1]);
-  var i;
-  for (i = 0; i < MESES.length; i += 1) if (f.indexOf(fold_(MESES[i])) >= 0) out.mes = i + 1;
+  if (!out.anio) {
+    var y2 = f.match(/(20\d{2})/);
+    if (y2) out.anio = Number(y2[1]);
+  }
+  if (!out.mes) {
+    var i;
+    for (i = 0; i < MESES.length; i += 1) if (f.indexOf(fold_(MESES[i])) >= 0) out.mes = i + 1;
+  }
+  if (out.fecha && !out.semana) out.semana = isoWeek_(out.fecha);
   return out;
 }
 function incomeKind_(group) {
